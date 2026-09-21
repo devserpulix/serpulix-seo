@@ -1,1 +1,0 @@
-# serpulix-seo
