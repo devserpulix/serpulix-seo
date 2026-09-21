@@ -4,7 +4,7 @@ Tags: seo, schema, structured data, json-ld, content
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 4.2.0
+Stable tag: 4.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -37,14 +37,14 @@ This plugin connects to the Serpulix SEO platform to sync content and structured
 * Service: Serpulix — https://serpulix.com (Terms: https://serpulix.com/terms, Privacy:
   https://serpulix.com/privacy).
 
-When GitHub updates are enabled in Serpulix SEO → Settings, the plugin also asks GitHub
-whether a newer release exists. That check runs on WordPress's normal update schedule,
-not on every page view.
+The plugin also asks GitHub whether a newer release of Serpulix SEO exists. That check
+runs on WordPress's normal update schedule, not on every page view. A newer GitHub
+Release appears on Plugins and Dashboard → Updates like any other plugin update.
 
-* What it sends: the site asks api.github.com for the latest release of the repository
-  you configure. If you save a personal access token for a private repository, that token
-  is sent only from the server to api.github.com and is not placed in the download URL
-  or shown in the admin.
+* What it sends: the site asks api.github.com for the latest release of
+  https://github.com/devserpulix/serpulix-seo. If a personal access token is defined in
+  wp-config.php for a private repository, that token is sent only from the server to
+  api.github.com and is not placed in the download URL or shown in the admin.
 * What it receives: the release version, notes, and plugin ZIP.
 * When: during a WordPress plugin update check, when an administrator opens the update
   details, and when an administrator installs the update.
@@ -61,13 +61,27 @@ not on every page view.
 
 == Changelog ==
 
+= 4.6.0 =
+* Native WordPress update check from GitHub Releases.
+
+= 4.5.0 =
+* Show a GitHub update on Plugins and Dashboard → Updates without waiting
+  for WordPress's 12-hour update cache.
+
+= 4.4.0 =
+* Confirm native WordPress plugin updates from GitHub Releases.
+
+= 4.3.0 =
+* GitHub Releases now power updates automatically from
+  https://github.com/devserpulix/serpulix-seo. WordPress shows the native
+  plugin update banner. No GitHub owner or repository settings are required.
+
 = 4.2.0 =
 * Alt tags: list images on published posts and pages (`GET /serpulix/v1/images`),
   write alt into the media library and the matching `<img>` in post content, and
   revert that write. Same API key as the rest of `serpulix/v1`.
-* GitHub Releases can supply plugin updates from Serpulix SEO → Settings. WordPress.org
-  registration is not required. Drafts are ignored, and prereleases are ignored unless
-  enabled.
+* GitHub Releases supply plugin updates automatically (devserpulix/serpulix-seo).
+  WordPress.org registration is not required. Drafts and prereleases are ignored.
 
 = 4.1.0 =
 * Cleanup release for the WordPress.org directory review.
