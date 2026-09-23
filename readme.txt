@@ -4,7 +4,7 @@ Tags: seo, schema, structured data, json-ld, content
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 4.6.0
+Stable tag: 4.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,6 +17,8 @@ Serpulix SEO connects your WordPress site to the [Serpulix](https://serpulix.com
 * Publish and update SEO-optimized articles and pages as native WordPress posts.
 * Deploy and manage schema.org (JSON-LD) structured data for your pages.
 * Toggle published content between published and draft from the dashboard.
+* Apply Technical SEO fixes (SEO title, meta description, canonical, robots,
+  content edits, redirects, and cache purge) from the Serpulix dashboard.
 
 The plugin renders deployed JSON-LD in the page footer and exposes a small REST API
 (`serpulix/v1`) that the Serpulix platform uses to sync content and schema. A Serpulix
@@ -60,6 +62,14 @@ Release appears on Plugins and Dashboard → Updates like any other plugin updat
 3. Manage content and schema from the Serpulix dashboard.
 
 == Changelog ==
+
+= 4.7.0 =
+* Technical SEO: REST endpoints for page resolve, SEO field writes (Yoast,
+  Rank Math, AIOSEO, or Serpulix fallback — never changes post_title for a
+  title fix), content edits with hash check, redirects, and cache purge.
+* Status endpoint advertises `tech_seo: true` for the Serpulix dashboard.
+* Front-end output for Serpulix SEO title/meta/canonical/robots when no
+  third-party SEO plugin is active; applies stored redirects.
 
 = 4.6.0 =
 * Native WordPress update check from GitHub Releases.

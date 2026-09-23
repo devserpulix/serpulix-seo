@@ -8,18 +8,21 @@ class Serpulix_SEO_Sync {
     private $cpt;
     private $sync_handler_v2;
     private $images;
+    private $tech_seo;
 
     public function __construct() {
         $this->api = new Serpulix_SEO_API();
         $this->cpt = new Serpulix_SEO_CPT();
         $this->sync_handler_v2 = new Serpulix_SEO_Sync_Handler_V2();
         $this->images = new Serpulix_SEO_Images();
+        $this->tech_seo = new Serpulix_SEO_Tech_SEO();
     }
 
     public function run() {
         // Initialize components
         $this->api->init();
         $this->cpt->init();
+        $this->tech_seo->init();
 
         // Add REST API endpoints
         add_action('rest_api_init', array($this, 'register_rest_routes'));
@@ -81,6 +84,9 @@ class Serpulix_SEO_Sync {
             'callback' => array($this->images, 'handle_write_alt'),
             'permission_callback' => array($this, 'verify_api_key')
         ));
+
+        // Technical SEO (titles, meta, content, redirects, cache purge)
+        $this->tech_seo->register_routes($ns, array($this, 'verify_api_key'));
     }
 
     /**
@@ -167,6 +173,7 @@ class Serpulix_SEO_Sync {
             'plugin' => 'Serpulix SEO',
             'version' => SERPULIX_SEO_VERSION,
             'alt_tags' => true,
+            'tech_seo' => true,
         ), 200);
     }
 
