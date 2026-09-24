@@ -3,7 +3,7 @@
  * Plugin Name: Serpulix SEO
  * Plugin URI: https://serpulix.com
  * Description: Sync and publish SEO content from Serpulix and deploy schema.org structured data to your site.
- * Version: 4.7.0
+ * Version: 4.7.1
  * Author: Serpulix
  * Author URI: https://serpulix.com
  * License: GPLv2 or later
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 // Define plugin constants
 // Runtime version. Keep this identical to the Version header above and to
 // Stable tag in readme.txt. GitHub releases are compared with this value.
-define('SERPULIX_SEO_VERSION', '4.7.0');
+define('SERPULIX_SEO_VERSION', '4.7.1');
 define('SERPULIX_SEO_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SERPULIX_SEO_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SERPULIX_SEO_PLUGIN_FILE', __FILE__);

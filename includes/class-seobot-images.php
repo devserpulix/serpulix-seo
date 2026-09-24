@@ -171,9 +171,6 @@ class Serpulix_SEO_Images {
         $path = is_string($file_url) ? parse_url($file_url, PHP_URL_PATH) : '';
         $file_name = is_string($path) && $path !== '' ? wp_basename($path) : '';
 
-        $previous_present = metadata_exists('post', $attachment_id, '_wp_attachment_image_alt');
-        $previous_alt = $previous_present ? (string) get_post_meta($attachment_id, '_wp_attachment_image_alt', true) : null;
-
         $posts = array();
         if (!$page_unresolved) {
             $posts = $requested_post
@@ -181,10 +178,36 @@ class Serpulix_SEO_Images {
                 : $this->posts_referencing($attachment_id, $file_name);
         }
 
+        // Prefer the page <img> alt for the receipt — not attachment meta.
+        // Block-editor alt and Gutenberg alt="" live on the tag and can disagree with meta.
+        $previous_from_page = false;
+        $previous_present = false;
+        $previous_alt = null;
+        foreach ($posts as $probe) {
+            if (!$probe || !isset($probe->post_content)) {
+                continue;
+            }
+            $from_page = self::first_matching_img_alt($probe->post_content, $attachment_id, $file_name);
+            if ($from_page !== null) {
+                $previous_from_page = true;
+                $previous_present = $from_page['alt_present'];
+                $previous_alt = $from_page['alt'];
+                break;
+            }
+        }
+        if (!$previous_from_page) {
+            $previous_present = metadata_exists('post', $attachment_id, '_wp_attachment_image_alt');
+            $previous_alt = $previous_present ? (string) get_post_meta($attachment_id, '_wp_attachment_image_alt', true) : null;
+        }
+
         $updated = 0;
+        $matched = 0;
         foreach ($posts as $post) {
             if (!$post || !isset($post->post_content)) {
                 continue;
+            }
+            if (self::content_matches_attachment($post->post_content, $attachment_id, $file_name)) {
+                $matched++;
             }
             $rewritten = self::rewrite_content($post->post_content, $attachment_id, $file_name, $alt, $alt_present);
             if ($rewritten === $post->post_content) {
@@ -200,6 +223,7 @@ class Serpulix_SEO_Images {
             $updated++;
         }
 
+        // Decorative (alt_present true, alt "") stores empty meta — never delete the key.
         if ($alt_present) {
             update_post_meta($attachment_id, '_wp_attachment_image_alt', $alt);
         } else {
@@ -211,6 +235,7 @@ class Serpulix_SEO_Images {
             'previous_alt' => $previous_present ? $previous_alt : null,
             'previous_alt_present' => (bool) $previous_present,
             'posts_updated' => $updated,
+            'posts_matched' => $matched,
             'page_unresolved' => $page_unresolved,
         ), 200);
     }
@@ -279,6 +304,35 @@ class Serpulix_SEO_Images {
         );
 
         return is_string($restored) ? $restored : $rewritten;
+    }
+
+    /**
+     * True when this post's HTML contains the attachment, including when the
+     * alt is already the value we would write. Script and style blocks do not count.
+     */
+    private static function content_matches_attachment($html, $attachment_id, $file_name) {
+        if (!is_string($html) || $html === '') {
+            return false;
+        }
+        $masked = preg_replace('/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/i', '', $html);
+        if (!is_string($masked)) {
+            $masked = $html;
+        }
+        if (preg_match_all(self::IMG_PATTERN, $masked, $tags)) {
+            foreach ($tags[0] as $tag) {
+                if (self::tag_matches($tag, $attachment_id, $file_name)) {
+                    return true;
+                }
+            }
+        }
+        $id = (string) $attachment_id;
+        if (preg_match('/^\d+$/', $id)) {
+            $pattern = '/<!--\s*wp:image\b[\s\S]*?"id"\s*:\s*' . preg_quote($id, '/') . '\b/';
+            if (preg_match($pattern, $masked)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function items_for_post($post) {
@@ -756,6 +810,29 @@ class Serpulix_SEO_Images {
             return array('alt' => null, 'alt_present' => false);
         }
         return array('alt' => $value === null ? '' : $value, 'alt_present' => true);
+    }
+
+    /**
+     * First matching <img> alt in post HTML for this attachment, or null when none.
+     * @return array{alt: ?string, alt_present: bool}|null
+     */
+    private static function first_matching_img_alt($html, $attachment_id, $file_name) {
+        if (!is_string($html) || $html === '') {
+            return null;
+        }
+        $masked = preg_replace('/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/i', '', $html);
+        if (!is_string($masked)) {
+            $masked = $html;
+        }
+        if (!preg_match_all(self::IMG_PATTERN, $masked, $tags)) {
+            return null;
+        }
+        foreach ($tags[0] as $tag) {
+            if (self::tag_matches($tag, $attachment_id, $file_name)) {
+                return self::alt_from_tag($tag);
+            }
+        }
+        return null;
     }
 
     private static function read_attr($tag, $name) {
