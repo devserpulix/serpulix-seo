@@ -202,12 +202,20 @@ class Serpulix_SEO_Images {
 
         $updated = 0;
         $matched = 0;
+        $places = array();
         foreach ($posts as $post) {
             if (!$post || !isset($post->post_content)) {
                 continue;
             }
             if (self::content_matches_attachment($post->post_content, $attachment_id, $file_name)) {
                 $matched++;
+                $before = self::first_matching_img_alt($post->post_content, $attachment_id, $file_name);
+                $places[] = array(
+                    'post_id' => (string) $post->ID,
+                    'page_url' => get_permalink($post) ?: null,
+                    'previous_alt' => ($before && $before['alt_present']) ? $before['alt'] : null,
+                    'previous_alt_present' => $before ? (bool) $before['alt_present'] : false,
+                );
             }
             $rewritten = self::rewrite_content($post->post_content, $attachment_id, $file_name, $alt, $alt_present);
             if ($rewritten === $post->post_content) {
@@ -237,7 +245,154 @@ class Serpulix_SEO_Images {
             'posts_updated' => $updated,
             'posts_matched' => $matched,
             'page_unresolved' => $page_unresolved,
+            'places' => $places,
         ), 200);
+    }
+
+    /**
+     * v1.5 page list source: registered nav menu items first (menu order),
+     * then published pages and posts. URLs only; Serpulix filters and ranks.
+     */
+    public function handle_menu($request) {
+        $limit = (int) $request->get_param('limit');
+        if ($limit <= 0 || $limit > 500) {
+            $limit = 300;
+        }
+        $seen = array();
+        $items = array();
+        $push = function ($url, $source) use (&$seen, &$items, $limit) {
+            if (!is_string($url) || $url === '' || count($items) >= $limit) {
+                return;
+            }
+            $key = untrailingslashit(strtolower($url));
+            if (isset($seen[$key])) {
+                return;
+            }
+            $seen[$key] = true;
+            $items[] = array('url' => $url, 'source' => $source);
+        };
+
+        $locations = get_nav_menu_locations();
+        if (is_array($locations)) {
+            foreach ($locations as $menu_id) {
+                $menu_items = wp_get_nav_menu_items($menu_id);
+                if (!is_array($menu_items)) {
+                    continue;
+                }
+                foreach ($menu_items as $item) {
+                    if (isset($item->url) && $this->is_same_site($item->url)) {
+                        $push($item->url, 'menu');
+                    }
+                }
+            }
+        }
+
+        $push(home_url('/'), 'menu');
+
+        $query = new WP_Query(array(
+            'post_type' => array('page', 'post'),
+            'post_status' => 'publish',
+            'posts_per_page' => $limit,
+            'orderby' => array('menu_order' => 'ASC', 'date' => 'DESC'),
+            'no_found_rows' => true,
+            'ignore_sticky_posts' => true,
+            'fields' => 'ids',
+        ));
+        foreach ($query->posts as $post_id) {
+            $push(get_permalink($post_id), 'content');
+        }
+
+        return new WP_REST_Response(array('success' => true, 'items' => $items), 200);
+    }
+
+    /**
+     * v1.5 page scan: rendered content of one page by URL (the_content filters
+     * applied) plus title and H1. Never blocked by a firewall.
+     */
+    public function handle_page_content($request) {
+        $url = $request->get_param('url');
+        if (!is_string($url) || $url === '') {
+            return new WP_REST_Response(array('success' => false, 'error' => 'Missing url'), 400);
+        }
+        $post_id = $this->url_to_post($url);
+        if (!$post_id) {
+            return new WP_REST_Response(array('success' => false, 'reason' => 'unresolved', 'page_url' => $url), 200);
+        }
+        $post = get_post($post_id);
+        if (!$post || $post->post_status !== 'publish') {
+            return new WP_REST_Response(array('success' => false, 'reason' => 'unresolved', 'page_url' => $url), 200);
+        }
+
+        $raw = is_string($post->post_content) ? $post->post_content : '';
+        $html = apply_filters('the_content', $raw);
+        $thumb = (int) get_post_thumbnail_id($post);
+        if ($thumb && $this->is_image_attachment($thumb)) {
+            $featured = wp_get_attachment_image($thumb, 'full', false, array('class' => 'wp-image-' . $thumb . ' serpulix-featured'));
+            if (is_string($featured) && $featured !== '') {
+                $html = $featured . "\n" . $html;
+            }
+        }
+        $h1 = $this->first_h1($html);
+        $title = get_the_title($post);
+
+        return new WP_REST_Response(array(
+            'success' => true,
+            'post_id' => (string) $post_id,
+            'page_url' => get_permalink($post),
+            'title' => $title,
+            'h1' => $h1 !== '' ? $h1 : $title,
+            'html' => is_string($html) ? $html : '',
+            'modified_at' => $this->modified_at($post_id),
+        ), 200);
+    }
+
+    /**
+     * v1.5 editability: map image URLs to attachment ids. Size (-1024x768),
+     * -scaled and -e123 edit suffixes are stripped before the lookup.
+     */
+    public function handle_resolve($request) {
+        $params = $request->get_json_params();
+        $urls = (is_array($params) && isset($params['urls']) && is_array($params['urls'])) ? $params['urls'] : null;
+        if ($urls === null) {
+            return new WP_REST_Response(array('success' => false, 'error' => 'Missing urls'), 400);
+        }
+        if (count($urls) > 200) {
+            return new WP_REST_Response(array('success' => false, 'error' => 'urls is limited to 200'), 400);
+        }
+        $results = array();
+        foreach ($urls as $url) {
+            if (!is_string($url) || $url === '') {
+                continue;
+            }
+            $src = $this->absolute_src($url);
+            if ($src === '' || !$this->is_same_site($src)) {
+                $results[] = array('url' => $url, 'external_id' => null, 'editable' => false, 'reason' => 'third_party');
+                continue;
+            }
+            if (preg_match('#/wp-content/themes/|/wp-includes/#i', $src)) {
+                $results[] = array('url' => $url, 'external_id' => null, 'editable' => false, 'reason' => 'theme_asset');
+                continue;
+            }
+            $id = $this->resolve_attachment_id('', $src);
+            if ($id && $this->is_image_attachment($id)) {
+                $results[] = array('url' => $url, 'external_id' => (string) $id, 'editable' => true, 'reason' => null);
+            } else {
+                $results[] = array('url' => $url, 'external_id' => null, 'editable' => false, 'reason' => 'no_media_match');
+            }
+        }
+        return new WP_REST_Response(array('success' => true, 'items' => $results), 200);
+    }
+
+    private function is_same_site($url) {
+        $host = parse_url($url, PHP_URL_HOST);
+        if (!is_string($host) || $host === '') {
+            return true;
+        }
+        $home = parse_url(home_url(), PHP_URL_HOST);
+        $strip = function ($h) {
+            return preg_replace('/^www\./i', '', strtolower((string) $h));
+        };
+        return $strip($host) === $strip($home);
     }
 
     /**
@@ -617,6 +772,10 @@ class Serpulix_SEO_Images {
                 $path = $next;
             }
             $next = preg_replace('/-scaled(\.[A-Za-z0-9]+)$/', '$1', $path);
+            if (is_string($next)) {
+                $path = $next;
+            }
+            $next = preg_replace('/-e\d{8,}(\.[A-Za-z0-9]+)$/', '$1', $path);
             if (is_string($next)) {
                 $path = $next;
             }

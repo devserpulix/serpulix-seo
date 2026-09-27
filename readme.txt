@@ -4,7 +4,7 @@ Tags: seo, schema, structured data, json-ld, content
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 4.7.1
+Stable tag: 4.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -62,6 +62,12 @@ Release appears on Plugins and Dashboard → Updates like any other plugin updat
 3. Manage content and schema from the Serpulix dashboard.
 
 == Changelog ==
+
+= 4.8.0 =
+* Alt tags v1.5: nav menu page list (`GET /alt-tags/menu`), rendered page content by
+  URL (`GET /alt-tags/page-content`), image URL to attachment resolve
+  (`POST /images/resolve`), and per-place `places` in the write response.
+* Attachment lookup also strips `-e123...` edit suffixes.
 
 = 4.7.1 =
 * Alt tags: decorative writes keep `alt=""` (empty meta, attribute present).

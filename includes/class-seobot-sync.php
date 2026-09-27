@@ -85,6 +85,24 @@ class Serpulix_SEO_Sync {
             'permission_callback' => array($this, 'verify_api_key')
         ));
 
+        register_rest_route($ns, '/images/resolve', array(
+            'methods' => 'POST',
+            'callback' => array($this->images, 'handle_resolve'),
+            'permission_callback' => array($this, 'verify_api_key')
+        ));
+
+        register_rest_route($ns, '/alt-tags/menu', array(
+            'methods' => 'GET',
+            'callback' => array($this->images, 'handle_menu'),
+            'permission_callback' => array($this, 'verify_api_key')
+        ));
+
+        register_rest_route($ns, '/alt-tags/page-content', array(
+            'methods' => 'GET',
+            'callback' => array($this->images, 'handle_page_content'),
+            'permission_callback' => array($this, 'verify_api_key')
+        ));
+
         // Technical SEO (titles, meta, content, redirects, cache purge)
         $this->tech_seo->register_routes($ns, array($this, 'verify_api_key'));
     }
@@ -173,6 +191,7 @@ class Serpulix_SEO_Sync {
             'plugin' => 'Serpulix SEO',
             'version' => SERPULIX_SEO_VERSION,
             'alt_tags' => true,
+            'alt_tags_v15' => true,
             'tech_seo' => true,
         ), 200);
     }
