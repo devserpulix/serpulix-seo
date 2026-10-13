@@ -4,7 +4,7 @@ Tags: seo, schema, structured data, json-ld, content
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 4.8.0
+Stable tag: 4.9.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -62,6 +62,25 @@ Release appears on Plugins and Dashboard → Updates like any other plugin updat
 3. Manage content and schema from the Serpulix dashboard.
 
 == Changelog ==
+
+= 4.9.1 =
+* Schema apply: the JSON-LD is saved with `wp_slash()`. Before, a double quote inside a text made
+  the stored schema unreadable (the page then printed none of it) and characters such as `’` or `é`
+  were printed as `u2019` / `u00e9`. Schema saved by an older version is repaired the next time it
+  is deployed from Serpulix.
+* Schema apply: the answer is `success` only when the stored schema reads back correctly.
+* Schema apply and removal clear that page's cache (`clean_post_cache`) and purge the page in
+  WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, SiteGround
+  Optimizer, WP-Optimize and Cache Enabler when one of them is active, so the change shows without
+  waiting for the cache to expire. The answer lists what was purged in `cache_purged`.
+* New action `serpulix_schema_changed` (`$post_id`, `$url`) for purging any other cache.
+* Removing the schema from a blog-index front page deletes the stored option.
+
+= 4.9.0 =
+* Bing Optimization: published posts and pages that are updated, unpublished, trashed or deleted
+  are reported to Serpulix (`POST /api/indexnow/events`) so they reach IndexNow or Bing. Sent once
+  per request on shutdown, non-blocking. Pages pushed by Serpulix itself are not reported twice.
+* `GET /status` reports `indexnow_events: true`.
 
 = 4.8.0 =
 * Alt tags v1.5: nav menu page list (`GET /alt-tags/menu`), rendered page content by

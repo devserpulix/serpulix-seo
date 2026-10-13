@@ -152,6 +152,14 @@ class Serpulix_SEO_Sync {
             return new WP_REST_Response(array('success' => false, 'error' => 'Missing url'), 400);
         }
 
+        // Accented and other non-ASCII characters stay as backslash-u escapes, so the
+        // value fits any database character set. If the schemas cannot be encoded at
+        // all, say so instead of storing nothing and answering success.
+        $json = wp_json_encode($schemas);
+        if (count($schemas) > 0 && ($json === false || $json === '')) {
+            return new WP_REST_Response(array('success' => false, 'error' => 'Schema could not be encoded'), 200);
+        }
+
         $post_id = url_to_postid($url);
 
         // Homepage / site root resolution
@@ -163,8 +171,14 @@ class Serpulix_SEO_Sync {
                 $post_id = $front;
             } else {
                 // Blog-index front page: no post to attach to -> store as a site option.
-                update_option('serpulix_schema_home', wp_json_encode($schemas));
-                return new WP_REST_Response(array('success' => true, 'post_id' => 0, 'applied' => count($schemas), 'target' => 'home_option'), 200);
+                // update_option() does not strip slashes, so no wp_slash() here.
+                if (count($schemas) > 0) {
+                    update_option('serpulix_schema_home', $json);
+                } else {
+                    delete_option('serpulix_schema_home');
+                }
+                $purged = $this->purge_page_caches(0, home_url('/'));
+                return new WP_REST_Response(array('success' => true, 'post_id' => 0, 'applied' => count($schemas), 'target' => 'home_option', 'cache_purged' => $purged), 200);
             }
         }
 
@@ -173,12 +187,95 @@ class Serpulix_SEO_Sync {
         }
 
         if (count($schemas) > 0) {
-            update_post_meta($post_id, '_serpulix_schema', wp_json_encode($schemas));
+            // update_post_meta() runs wp_unslash() on the value. Without wp_slash() every
+            // backslash in the JSON was removed: a double quote inside a text made the
+            // stored JSON unreadable (the page then printed no schema at all) and an
+            // escaped apostrophe or accented letter was printed as "u2019" / "u00e9".
+            update_post_meta($post_id, '_serpulix_schema', wp_slash($json));
+            // Read it back: only report success when what was stored can be printed.
+            $stored = get_post_meta($post_id, '_serpulix_schema', true);
+            $decoded = is_string($stored) ? json_decode($stored, true) : null;
+            if (!is_array($decoded) || count($decoded) !== count($schemas)) {
+                return new WP_REST_Response(array('success' => false, 'error' => 'Schema was not stored correctly'), 200);
+            }
         } else {
             delete_post_meta($post_id, '_serpulix_schema');
         }
 
-        return new WP_REST_Response(array('success' => true, 'post_id' => $post_id, 'applied' => count($schemas)), 200);
+        $purged = $this->purge_page_caches($post_id, get_permalink($post_id));
+
+        return new WP_REST_Response(array('success' => true, 'post_id' => $post_id, 'applied' => count($schemas), 'cache_purged' => $purged), 200);
+    }
+
+    /**
+     * Clear what would keep serving the page as it was before the schema changed:
+     * WordPress's own cache for the post, then the page cache of whichever caching
+     * plugin is installed. Only that one page is purged, never the whole site.
+     * Each call is guarded, so a plugin that is not there is simply skipped.
+     * Returns the names of the caches that were purged.
+     */
+    private function purge_page_caches($post_id, $url) {
+        $purged = array();
+        $post_id = (int) $post_id;
+
+        if ($post_id) {
+            clean_post_cache($post_id);
+            $purged[] = 'post_cache';
+        }
+
+        // WP Rocket
+        if ($post_id && function_exists('rocket_clean_post')) {
+            rocket_clean_post($post_id);
+            $purged[] = 'wp_rocket';
+        } elseif (!$post_id && function_exists('rocket_clean_home')) {
+            rocket_clean_home();
+            $purged[] = 'wp_rocket';
+        }
+        // LiteSpeed Cache
+        if ($post_id && has_action('litespeed_purge_post')) {
+            do_action('litespeed_purge_post', $post_id);
+            $purged[] = 'litespeed';
+        } elseif ($url && has_action('litespeed_purge_url')) {
+            do_action('litespeed_purge_url', $url);
+            $purged[] = 'litespeed';
+        }
+        // W3 Total Cache
+        if ($post_id && function_exists('w3tc_flush_post')) {
+            w3tc_flush_post($post_id);
+            $purged[] = 'w3tc';
+        } elseif ($url && function_exists('w3tc_flush_url')) {
+            w3tc_flush_url($url);
+            $purged[] = 'w3tc';
+        }
+        // WP Super Cache
+        if ($post_id && function_exists('wp_cache_post_change')) {
+            wp_cache_post_change($post_id);
+            $purged[] = 'wp_super_cache';
+        }
+        // WP Fastest Cache
+        if ($post_id && function_exists('wpfc_clear_post_cache_by_id')) {
+            wpfc_clear_post_cache_by_id($post_id);
+            $purged[] = 'wp_fastest_cache';
+        }
+        // SiteGround Optimizer
+        if ($url && function_exists('sg_cachepress_purge_cache')) {
+            sg_cachepress_purge_cache($url);
+            $purged[] = 'sg_optimizer';
+        }
+        // WP-Optimize
+        if ($post_id && class_exists('WPO_Page_Cache') && method_exists('WPO_Page_Cache', 'delete_single_post_cache')) {
+            WPO_Page_Cache::delete_single_post_cache($post_id);
+            $purged[] = 'wp_optimize';
+        }
+        // Cache Enabler
+        if ($post_id && has_action('cache_enabler_clear_page_cache_by_post')) {
+            do_action('cache_enabler_clear_page_cache_by_post', $post_id);
+            $purged[] = 'cache_enabler';
+        }
+        // For a cache this plugin does not know (a host's own, a CDN): hook this to purge it.
+        do_action('serpulix_schema_changed', $post_id, $url);
+
+        return $purged;
     }
 
     /**
@@ -193,6 +290,7 @@ class Serpulix_SEO_Sync {
             'alt_tags' => true,
             'alt_tags_v15' => true,
             'tech_seo' => true,
+            'indexnow_events' => true,
         ), 200);
     }
 
