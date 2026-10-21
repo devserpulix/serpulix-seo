@@ -4,7 +4,7 @@ Tags: seo, schema, structured data, json-ld, content
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 4.9.1
+Stable tag: 4.9.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -62,6 +62,14 @@ Release appears on Plugins and Dashboard → Updates like any other plugin updat
 3. Manage content and schema from the Serpulix dashboard.
 
 == Changelog ==
+
+= 4.9.2 =
+* Technical SEO: a title, description, content or redirect change now clears that page from the
+  page cache straight away, the same way a schema change does (WordPress, WP Rocket, LiteSpeed,
+  W3 Total Cache, WP Super Cache, WP Fastest Cache, SiteGround, WP-Optimize, Cache Enabler). Before,
+  a SiteGround site kept serving the page as it was, so visitors and search engines saw the old title.
+* Cache purge (`/cache/purge`) clears one page when given `post_id` or `url`, and the whole site,
+  SiteGround included, when given neither.
 
 = 4.9.1 =
 * Schema apply: the JSON-LD is saved with `wp_slash()`. Before, a double quote inside a text made

@@ -215,67 +215,7 @@ class Serpulix_SEO_Sync {
      * Returns the names of the caches that were purged.
      */
     private function purge_page_caches($post_id, $url) {
-        $purged = array();
-        $post_id = (int) $post_id;
-
-        if ($post_id) {
-            clean_post_cache($post_id);
-            $purged[] = 'post_cache';
-        }
-
-        // WP Rocket
-        if ($post_id && function_exists('rocket_clean_post')) {
-            rocket_clean_post($post_id);
-            $purged[] = 'wp_rocket';
-        } elseif (!$post_id && function_exists('rocket_clean_home')) {
-            rocket_clean_home();
-            $purged[] = 'wp_rocket';
-        }
-        // LiteSpeed Cache
-        if ($post_id && has_action('litespeed_purge_post')) {
-            do_action('litespeed_purge_post', $post_id);
-            $purged[] = 'litespeed';
-        } elseif ($url && has_action('litespeed_purge_url')) {
-            do_action('litespeed_purge_url', $url);
-            $purged[] = 'litespeed';
-        }
-        // W3 Total Cache
-        if ($post_id && function_exists('w3tc_flush_post')) {
-            w3tc_flush_post($post_id);
-            $purged[] = 'w3tc';
-        } elseif ($url && function_exists('w3tc_flush_url')) {
-            w3tc_flush_url($url);
-            $purged[] = 'w3tc';
-        }
-        // WP Super Cache
-        if ($post_id && function_exists('wp_cache_post_change')) {
-            wp_cache_post_change($post_id);
-            $purged[] = 'wp_super_cache';
-        }
-        // WP Fastest Cache
-        if ($post_id && function_exists('wpfc_clear_post_cache_by_id')) {
-            wpfc_clear_post_cache_by_id($post_id);
-            $purged[] = 'wp_fastest_cache';
-        }
-        // SiteGround Optimizer
-        if ($url && function_exists('sg_cachepress_purge_cache')) {
-            sg_cachepress_purge_cache($url);
-            $purged[] = 'sg_optimizer';
-        }
-        // WP-Optimize
-        if ($post_id && class_exists('WPO_Page_Cache') && method_exists('WPO_Page_Cache', 'delete_single_post_cache')) {
-            WPO_Page_Cache::delete_single_post_cache($post_id);
-            $purged[] = 'wp_optimize';
-        }
-        // Cache Enabler
-        if ($post_id && has_action('cache_enabler_clear_page_cache_by_post')) {
-            do_action('cache_enabler_clear_page_cache_by_post', $post_id);
-            $purged[] = 'cache_enabler';
-        }
-        // For a cache this plugin does not know (a host's own, a CDN): hook this to purge it.
-        do_action('serpulix_schema_changed', $post_id, $url);
-
-        return $purged;
+        return Serpulix_Cache::purge_page($post_id, $url, 'serpulix_schema_changed');
     }
 
     /**

@@ -259,8 +259,11 @@ class Serpulix_SEO_Tech_SEO {
             return new WP_REST_Response(array('ok' => false, 'error' => 'No SEO fields to update'), 400);
         }
         $previous = $this->write_seo_fields($post_id, $fields);
+        // A host's page cache (SiteGround's above all) kept serving the old title: clear this page now.
+        $purged = Serpulix_Cache::purge_page($post_id, get_permalink($post_id), 'serpulix_tech_seo_changed');
         return new WP_REST_Response(array(
             'ok' => true,
+            'cache_purged' => $purged,
             'previous' => array(
                 'title' => $previous['title'],
                 'meta_description' => $previous['meta_description'],
@@ -299,10 +302,12 @@ class Serpulix_SEO_Tech_SEO {
         if (is_wp_error($result)) {
             return new WP_REST_Response(array('ok' => false, 'error' => $result->get_error_message()), 403);
         }
+        $purged = Serpulix_Cache::purge_page($post_id, get_permalink($post_id), 'serpulix_tech_seo_changed');
         return new WP_REST_Response(array(
             'ok' => true,
             'previous_hash' => $previous_hash,
             'content_hash' => md5($content),
+            'cache_purged' => $purged,
         ), 200);
     }
 
@@ -326,6 +331,7 @@ class Serpulix_SEO_Tech_SEO {
                     'header_code' => $type,
                     'status' => 'active',
                 ));
+                Serpulix_Cache::purge_page(0, $from, 'serpulix_tech_seo_changed');
                 return new WP_REST_Response(array('ok' => true, 'via' => 'rank_math'), 200);
             } catch (Exception $e) {
                 // fall through
@@ -340,33 +346,37 @@ class Serpulix_SEO_Tech_SEO {
         $key = $this->normalize_redirect_key($from);
         $redirects[$key] = array('to' => $to, 'type' => $type, 'from' => $from);
         update_option('serpulix_tech_seo_redirects', $redirects, false);
+        // The old address may be cached as it was (a 404 page): clear it so the redirect is served.
+        Serpulix_Cache::purge_page(0, $from, 'serpulix_tech_seo_changed');
 
         return new WP_REST_Response(array('ok' => true, 'via' => 'serpulix'), 200);
     }
 
+    /**
+     * POST /cache/purge. With a page (`post_id` and/or `url` in the body) only that page is cleared,
+     * the same way a write clears it; with neither, the whole site (the pre-4.9.2 behaviour, which
+     * missed SiteGround). Serpulix sends the page from 4.9.2 on; older Serpulix sends no body.
+     */
     public function handle_cache_purge($request) {
-        $purged = array();
-        if (function_exists('rocket_clean_domain')) {
-            rocket_clean_domain();
-            $purged[] = 'wp_rocket';
+        $params = $request->get_json_params();
+        $params = is_array($params) ? $params : array();
+        $post_id = isset($params['post_id']) ? intval($params['post_id']) : 0;
+        $url = isset($params['url']) ? esc_url_raw($params['url']) : '';
+        if ($post_id && !get_post($post_id)) {
+            $post_id = 0;
         }
-        if (class_exists('LiteSpeed_Cache_API') && method_exists('LiteSpeed_Cache_API', 'purge_all')) {
-            LiteSpeed_Cache_API::purge_all();
-            $purged[] = 'litespeed';
+        if (!$post_id && $url) {
+            $post_id = url_to_postid($url);
         }
-        if (function_exists('w3tc_flush_all')) {
-            w3tc_flush_all();
-            $purged[] = 'w3tc';
+        if ($post_id || $url) {
+            if (!$url) {
+                $url = get_permalink($post_id);
+            }
+            $purged = Serpulix_Cache::purge_page($post_id, $url, 'serpulix_tech_seo_changed');
+            return new WP_REST_Response(array('ok' => true, 'scope' => 'page', 'post_id' => $post_id, 'purged' => $purged), 200);
         }
-        if (function_exists('wp_cache_clear_cache')) {
-            wp_cache_clear_cache();
-            $purged[] = 'wp_super_cache';
-        }
-        if (function_exists('wp_cache_flush')) {
-            wp_cache_flush();
-            $purged[] = 'object_cache';
-        }
-        return new WP_REST_Response(array('ok' => true, 'purged' => $purged), 200);
+        $purged = Serpulix_Cache::purge_site();
+        return new WP_REST_Response(array('ok' => true, 'scope' => 'site', 'purged' => $purged), 200);
     }
 
     /**
