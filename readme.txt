@@ -4,7 +4,7 @@ Tags: seo, schema, structured data, json-ld, content
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 4.9.2
+Stable tag: 4.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -62,6 +62,15 @@ Release appears on Plugins and Dashboard → Updates like any other plugin updat
 3. Manage content and schema from the Serpulix dashboard.
 
 == Changelog ==
+
+= 4.10.0 =
+* Technical SEO: pages served at their own address by another post type (Serpulix landing pages at
+  the site root, or another plugin's custom type) are found by their path, so their title and heading
+  fixes no longer fail with "no post or page at this address". A post whose permalink is a different
+  address is never taken instead.
+* SEOPress and The SEO Framework are recognised: titles, descriptions, canonicals and noindex are
+  written into their own fields, and Serpulix no longer prints a second title and description next
+  to theirs.
 
 = 4.9.2 =
 * Technical SEO: a title, description, content or redirect change now clears that page from the

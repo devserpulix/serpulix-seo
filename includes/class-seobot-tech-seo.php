@@ -73,6 +73,38 @@ class Serpulix_SEO_Tech_SEO {
             }
         }
 
+        // 4.10.0: url_to_postid() knows only the rewrite rules WordPress itself builds. A post type
+        // served at its own address (Serpulix landing pages, seobot_page, live at the site root) or
+        // another plugin's custom type was "not found", so its title and heading fixes all failed.
+        // Look the address up by its path across every public post type, and accept a match only
+        // when that post's own permalink is the address asked for.
+        if ($path && $path !== '/') {
+            $types = array_values(array_unique(array_merge(
+                array('page', 'post', 'seobot_page'),
+                get_post_types(array('public' => true))
+            )));
+            $want = untrailingslashit($path);
+            $found = get_page_by_path(trim($path, '/'), OBJECT, $types);
+            if ($found && untrailingslashit((string) wp_parse_url(get_permalink($found), PHP_URL_PATH)) === $want) {
+                return (int) $found->ID;
+            }
+            $slug = basename($want);
+            if ($slug) {
+                $ids = get_posts(array(
+                    'name' => $slug,
+                    'post_type' => $types,
+                    'post_status' => 'publish',
+                    'numberposts' => 5,
+                    'fields' => 'ids',
+                ));
+                foreach ($ids as $id) {
+                    if (untrailingslashit((string) wp_parse_url(get_permalink($id), PHP_URL_PATH)) === $want) {
+                        return (int) $id;
+                    }
+                }
+            }
+        }
+
         return 0;
     }
 
@@ -85,6 +117,14 @@ class Serpulix_SEO_Tech_SEO {
         }
         if (defined('AIOSEO_VERSION') || class_exists('AIOSEO\\Plugin')) {
             return 'aioseo';
+        }
+        // 4.10.0: SEOPress and The SEO Framework. Before, they read as "no SEO plugin", so Serpulix
+        // printed its own title and description next to theirs (two of each on the page).
+        if (defined('SEOPRESS_VERSION') || function_exists('seopress_init')) {
+            return 'seopress';
+        }
+        if (defined('THE_SEO_FRAMEWORK_VERSION') || function_exists('the_seo_framework')) {
+            return 'tsf';
         }
         return 'serpulix';
     }
@@ -130,6 +170,16 @@ class Serpulix_SEO_Tech_SEO {
             } else {
                 $robots = (string) $robots_meta;
             }
+        } elseif ($plugin === 'seopress') {
+            $title = (string) get_post_meta($post_id, '_seopress_titles_title', true);
+            $meta = (string) get_post_meta($post_id, '_seopress_titles_desc', true);
+            $canonical = (string) get_post_meta($post_id, '_seopress_robots_canonical', true);
+            $robots = ((string) get_post_meta($post_id, '_seopress_robots_index', true) === 'yes') ? 'noindex' : 'index';
+        } elseif ($plugin === 'tsf') {
+            $title = (string) get_post_meta($post_id, '_genesis_title', true);
+            $meta = (string) get_post_meta($post_id, '_genesis_description', true);
+            $canonical = (string) get_post_meta($post_id, '_genesis_canonical_uri', true);
+            $robots = ((string) get_post_meta($post_id, '_genesis_noindex', true) === '1') ? 'noindex' : 'index';
         } else {
             $title = (string) get_post_meta($post_id, '_serpulix_seo_title', true);
             $meta = (string) get_post_meta($post_id, '_serpulix_seo_description', true);
@@ -158,6 +208,10 @@ class Serpulix_SEO_Tech_SEO {
                 update_post_meta($post_id, 'rank_math_title', $val);
             } elseif ($plugin === 'aioseo') {
                 update_post_meta($post_id, '_aioseo_title', $val);
+            } elseif ($plugin === 'seopress') {
+                update_post_meta($post_id, '_seopress_titles_title', $val);
+            } elseif ($plugin === 'tsf') {
+                update_post_meta($post_id, '_genesis_title', $val);
             } else {
                 update_post_meta($post_id, '_serpulix_seo_title', $val);
             }
@@ -170,6 +224,10 @@ class Serpulix_SEO_Tech_SEO {
                 update_post_meta($post_id, 'rank_math_description', $val);
             } elseif ($plugin === 'aioseo') {
                 update_post_meta($post_id, '_aioseo_description', $val);
+            } elseif ($plugin === 'seopress') {
+                update_post_meta($post_id, '_seopress_titles_desc', $val);
+            } elseif ($plugin === 'tsf') {
+                update_post_meta($post_id, '_genesis_description', $val);
             } else {
                 update_post_meta($post_id, '_serpulix_seo_description', $val);
             }
@@ -182,6 +240,10 @@ class Serpulix_SEO_Tech_SEO {
                 update_post_meta($post_id, 'rank_math_canonical_url', $val);
             } elseif ($plugin === 'aioseo') {
                 update_post_meta($post_id, '_aioseo_canonical_url', $val);
+            } elseif ($plugin === 'seopress') {
+                update_post_meta($post_id, '_seopress_robots_canonical', $val);
+            } elseif ($plugin === 'tsf') {
+                update_post_meta($post_id, '_genesis_canonical_uri', $val);
             } else {
                 update_post_meta($post_id, '_serpulix_seo_canonical', $val);
             }
@@ -202,6 +264,10 @@ class Serpulix_SEO_Tech_SEO {
                 $robots_meta['noindex'] = (stripos($val, 'noindex') !== false) ? '1' : '';
                 $robots_meta['nofollow'] = (stripos($val, 'nofollow') !== false) ? '1' : '';
                 update_post_meta($post_id, '_aioseo_robots_meta', $robots_meta);
+            } elseif ($plugin === 'seopress') {
+                update_post_meta($post_id, '_seopress_robots_index', (stripos($val, 'noindex') !== false) ? 'yes' : '');
+            } elseif ($plugin === 'tsf') {
+                update_post_meta($post_id, '_genesis_noindex', (stripos($val, 'noindex') !== false) ? '1' : '0');
             } else {
                 update_post_meta($post_id, '_serpulix_seo_robots', $val);
             }
