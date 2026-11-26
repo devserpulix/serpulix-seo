@@ -361,20 +361,71 @@ class Serpulix_SEO_Tech_SEO {
             ), 409);
         }
         $previous_hash = $current_hash;
-        $result = wp_update_post(array(
-            'ID' => $post_id,
-            'post_content' => $content,
-        ), true);
+        $previous_content = $post->post_content;
+        $result = $this->save_post_content($post_id, $content);
         if (is_wp_error($result)) {
             return new WP_REST_Response(array('ok' => false, 'error' => $result->get_error_message()), 403);
+        }
+        // 4.11.0: answer with what WordPress stored, not what was sent. If anything still changed the text on the
+        // way in (another plugin's save filter), the page is put back as it was and nothing is reported as done.
+        $stored = $this->stored_content($post_id);
+        if ($stored !== $content) {
+            $this->restore_post_content($post_id, $previous_content);
+            return new WP_REST_Response(array(
+                'ok' => false,
+                'code' => 'stored_differs',
+                'error' => 'WordPress saved different text from what was sent, so the page was put back as it was.',
+                'content_hash' => md5($stored),
+            ), 422);
         }
         $purged = Serpulix_Cache::purge_page($post_id, get_permalink($post_id), 'serpulix_tech_seo_changed');
         return new WP_REST_Response(array(
             'ok' => true,
             'previous_hash' => $previous_hash,
-            'content_hash' => md5($content),
+            'content_hash' => md5($stored),
             'cache_purged' => $purged,
         ), 200);
+    }
+
+    /**
+     * 4.11.0: save a page's text exactly as Serpulix sent it (QA TS08). A REST request has no user, so WordPress's
+     * HTML filter (kses) would strip <iframe>, <script>, <form> and <style> from the whole page body: maps,
+     * booking widgets, forms and embeds. It is switched off for this one save, as the Image Alt Text writer
+     * does, and switched back on after. wp_update_post() removes one level of slashes, so the text is slashed
+     * first: backslashes in block settings ("<" in JSON) used to be lost.
+     */
+    private function save_post_content($post_id, $content) {
+        $restore = (bool) has_filter('content_save_pre', 'wp_filter_post_kses');
+        kses_remove_filters();
+        $result = wp_update_post(array(
+            'ID' => $post_id,
+            'post_content' => wp_slash($content),
+        ), true);
+        if ($restore) {
+            kses_init_filters();
+        }
+        return $result;
+    }
+
+    /**
+     * Put the page text back exactly as it was, past every save filter: the filter that changed the new text
+     * would change the old one too if it went through wp_update_post() again.
+     */
+    private function restore_post_content($post_id, $content) {
+        global $wpdb;
+        if (isset($wpdb) && is_object($wpdb) && method_exists($wpdb, 'update')) {
+            $wpdb->update($wpdb->posts, array('post_content' => $content), array('ID' => $post_id));
+            clean_post_cache($post_id);
+            return;
+        }
+        $this->save_post_content($post_id, $content);
+    }
+
+    /** The page text as WordPress has it now, past the object cache. */
+    private function stored_content($post_id) {
+        clean_post_cache($post_id);
+        $saved = get_post($post_id);
+        return $saved ? (string) $saved->post_content : '';
     }
 
     public function handle_redirect($request) {
@@ -388,29 +439,24 @@ class Serpulix_SEO_Tech_SEO {
         if (!in_array($type, array(301, 302, 307, 308), true)) {
             $type = 301;
         }
-
-        if (class_exists('RankMath') && class_exists('\\RankMath\\Redirections\\DB')) {
-            try {
-                \RankMath\Redirections\DB::add(array(
-                    'sources' => array(array('pattern' => $from, 'comparison' => 'exact')),
-                    'url_to' => $to,
-                    'header_code' => $type,
-                    'status' => 'active',
-                ));
-                Serpulix_Cache::purge_page(0, $from, 'serpulix_tech_seo_changed');
-                return new WP_REST_Response(array('ok' => true, 'via' => 'rank_math'), 200);
-            } catch (Exception $e) {
-                // fall through
-            }
+        // 4.11.0: never a redirect to the address itself (a loop), and never over a page that is live in WordPress.
+        $key = $this->normalize_redirect_key($from);
+        if ($key === $this->normalize_redirect_key($to) && untrailingslashit(strtolower((string) wp_parse_url($to, PHP_URL_HOST))) === untrailingslashit(strtolower((string) wp_parse_url($from, PHP_URL_HOST)))) {
+            return new WP_REST_Response(array('ok' => false, 'code' => 'loop', 'error' => 'The redirect would point the address at itself, so nothing was written.'), 400);
+        }
+        $live_id = $this->resolve_post_id_from_url($from);
+        if ($live_id && get_post_status($live_id) === 'publish' && $this->normalize_redirect_key((string) get_permalink($live_id)) === $key) {
+            return new WP_REST_Response(array('ok' => false, 'code' => 'live_page', 'error' => 'This address has a published page in WordPress, so a redirect would hide it. Nothing was written.'), 409);
         }
 
-        // Serpulix own redirect table (option)
+        // 4.11.0: always the plugin's own redirect list, which it serves itself (maybe_redirect) on every site. Rank Math
+        // was given the full address as its source, which it does not match (it keeps addresses without the domain),
+        // and its redirect module may be switched off, so a 404 "fixed" there could keep answering 404 (QA TS9).
         $redirects = get_option('serpulix_tech_seo_redirects', array());
         if (!is_array($redirects)) {
             $redirects = array();
         }
-        $key = $this->normalize_redirect_key($from);
-        $redirects[$key] = array('to' => $to, 'type' => $type, 'from' => $from);
+        $redirects[$key] = array('to' => $to, 'type' => $type, 'from' => $from, 'at' => gmdate('c'));
         update_option('serpulix_tech_seo_redirects', $redirects, false);
         // The old address may be cached as it was (a 404 page): clear it so the redirect is served.
         Serpulix_Cache::purge_page(0, $from, 'serpulix_tech_seo_changed');

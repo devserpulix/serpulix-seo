@@ -260,9 +260,12 @@ class Serpulix_SEO_Sync_Handler_V2 {
                     $post_data_wp['post_status'] = 'publish';
                 }
                 $post_data_wp['ID'] = $post_id;
-                $result = wp_update_post($post_data_wp, true);
+                // wp_update_post() and wp_insert_post() unslash what they are given (post fields and
+                // meta_input), so the data is slashed first: a backslash in the content (block
+                // settings such as \u003c, JSON-LD, a path) is saved as it was sent.
+                $result = wp_update_post(wp_slash($post_data_wp), true);
             } else {
-                $result = wp_insert_post($post_data_wp, true);
+                $result = wp_insert_post(wp_slash($post_data_wp), true);
             }
 
             if (is_wp_error($result)) {
@@ -303,7 +306,8 @@ class Serpulix_SEO_Sync_Handler_V2 {
 
             // Save schema markup as post meta
             if (!empty($page_data['schemaMarkup'])) {
-                update_post_meta($final_post_id, 'seobot_schema', $page_data['schemaMarkup']);
+                // update_post_meta() unslashes its value: slashed so JSON escapes survive.
+                update_post_meta($final_post_id, 'seobot_schema', wp_slash($page_data['schemaMarkup']));
             }
 
             // Save Content Studio CSS/JS as files
@@ -325,13 +329,13 @@ class Serpulix_SEO_Sync_Handler_V2 {
                 }
 
                 if (!empty($page_data['seobot_base_css']) || !empty($page_data['seobot_post_css'])) {
-                    update_post_meta($final_post_id, '_seobot_has_cs_styles', '1');
+                    update_post_meta($final_post_id, '_seobot_has_cs_styles', wp_slash('1'));
                 }
 
                 // Per-post JS
                 if (!empty($page_data['seobot_js'])) {
                     file_put_contents($seobot_dir . '/cs-' . $final_post_id . '.js', $page_data['seobot_js']);
-                    update_post_meta($final_post_id, '_seobot_has_cs_js', '1');
+                    update_post_meta($final_post_id, '_seobot_has_cs_js', wp_slash('1'));
                 }
             }
 
@@ -446,11 +450,11 @@ class Serpulix_SEO_Sync_Handler_V2 {
         
         // Set alt text
         if ($alt_text) {
-            update_post_meta($attachment_id, '_wp_attachment_image_alt', sanitize_text_field($alt_text));
+            update_post_meta($attachment_id, '_wp_attachment_image_alt', wp_slash(sanitize_text_field($alt_text)));
         }
         
         // Store original SEOBot URL for deduplication
-        update_post_meta($attachment_id, '_seobot_original_url', $image_url);
+        update_post_meta($attachment_id, '_seobot_original_url', wp_slash($image_url));
         
         return $attachment_id;
     }

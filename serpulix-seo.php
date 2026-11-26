@@ -3,7 +3,7 @@
  * Plugin Name: Serpulix SEO
  * Plugin URI: https://serpulix.com
  * Description: Sync and publish SEO content from Serpulix and deploy schema.org structured data to your site.
- * Version: 4.10.0
+ * Version: 4.11.1
  * Author: Serpulix
  * Author URI: https://serpulix.com
  * License: GPLv2 or later
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 // Define plugin constants
 // Runtime version. Keep this identical to the Version header above and to
 // Stable tag in readme.txt. GitHub releases are compared with this value.
-define('SERPULIX_SEO_VERSION', '4.10.0');
+define('SERPULIX_SEO_VERSION', '4.11.1');
 define('SERPULIX_SEO_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SERPULIX_SEO_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SERPULIX_SEO_PLUGIN_FILE', __FILE__);
@@ -163,59 +163,92 @@ function serpulix_seo_enqueue_content_studio_assets() {
     }
 }
 
+/**
+ * Decode a stored schema value into a list of JSON-LD objects. Content Studio stores one object (as a JSON
+ * string); the Schema Analyzer stores a JSON array of objects.
+ */
+function serpulix_seo_schema_items($schema) {
+    $decoded = is_string($schema) ? json_decode($schema, true) : $schema;
+    if (empty($decoded) || !is_array($decoded)) {
+        return array();
+    }
+    // Array-of-objects (sequential keys) vs a single object.
+    $items = array_key_exists(0, $decoded) ? $decoded : array($decoded);
+    return array_values(array_filter($items, function ($item) {
+        return !empty($item) && is_array($item);
+    }));
+}
+
+/** Does this JSON-LD object declare the given @type (case-insensitive, a list of types included)? */
+function serpulix_seo_schema_has_type($item, $type) {
+    if (!is_array($item) || !isset($item['@type'])) {
+        return false;
+    }
+    $types = is_array($item['@type']) ? $item['@type'] : array($item['@type']);
+    foreach ($types as $t) {
+        if (is_string($t) && strtolower(preg_replace('#^https?://schema\.org/#i', '', $t)) === strtolower($type)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function serpulix_seo_print_schema_items($items) {
+    foreach ($items as $item) {
+        echo '<script type="application/ld+json">';
+        // JSON_HEX_TAG|JSON_HEX_AMP hex-encode < > & so a field value containing
+        // "</script>" can't break out of the script block (stored XSS). Slashes stay
+        // unescaped for clean URLs.
+        echo wp_json_encode($item, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
+        echo "</script>\n";
+    }
+}
+
 function serpulix_seo_inject_schema() {
     if (!is_singular() && !is_front_page()) {
         return;
     }
 
-    // Two independent channels:
-    //  - seobot_schema       : Content Studio (single JSON object/string)
+    // Two independent channels, printed apart (QA SC-18):
+    //  - seobot_schema       : Content Studio (single JSON object/string), under its own comment
     //  - _serpulix_schema    : Schema Analyzer apply (JSON-encoded ARRAY of objects)
     //  - serpulix_schema_home: Schema Analyzer apply for a blog-index front page
-    $blocks = array();
+    // Before, both were printed after one comment, so the Analyzer took Content Studio's FAQ for its own,
+    // adopted it and pushed it again: the page printed the FAQ twice.
+    $content_studio = array();
+    $analyzer = array();
 
     if (is_singular()) {
         $post_id = get_the_ID();
-        $legacy = get_post_meta($post_id, 'seobot_schema', true);
-        if (!empty($legacy)) {
-            $blocks[] = $legacy;
-        }
-        $serpulix = get_post_meta($post_id, '_serpulix_schema', true);
-        if (!empty($serpulix)) {
-            $blocks[] = $serpulix;
-        }
+        $content_studio = serpulix_seo_schema_items(get_post_meta($post_id, 'seobot_schema', true));
+        $analyzer = serpulix_seo_schema_items(get_post_meta($post_id, '_serpulix_schema', true));
     }
     if (is_front_page()) {
-        $home_opt = get_option('serpulix_schema_home');
-        if (!empty($home_opt)) {
-            $blocks[] = $home_opt;
-        }
+        $analyzer = array_merge($analyzer, serpulix_seo_schema_items(get_option('serpulix_schema_home')));
     }
 
-    if (empty($blocks)) {
-        return;
+    // One FAQ per page: when Content Studio prints the page's FAQ, an Analyzer FAQPage is not printed beside it.
+    // Content Studio's is the one kept up to date with the page's FAQ section.
+    $cs_has_faq = false;
+    foreach ($content_studio as $item) {
+        if (serpulix_seo_schema_has_type($item, 'FAQPage')) {
+            $cs_has_faq = true;
+        }
+    }
+    if ($cs_has_faq) {
+        $analyzer = array_values(array_filter($analyzer, function ($item) {
+            return !serpulix_seo_schema_has_type($item, 'FAQPage');
+        }));
     }
 
-    echo "\n<!-- Serpulix SEO Schema.org Markup -->\n";
-    foreach ($blocks as $schema) {
-        // Decode; _serpulix_schema / serpulix_schema_home are arrays of JSON-LD objects.
-        $decoded = is_string($schema) ? json_decode($schema, true) : $schema;
-        if (empty($decoded)) {
-            continue;
-        }
-        // Array-of-objects (sequential keys) vs a single object.
-        $items = (is_array($decoded) && array_key_exists(0, $decoded)) ? $decoded : array($decoded);
-        foreach ($items as $item) {
-            if (empty($item)) {
-                continue;
-            }
-            echo '<script type="application/ld+json">';
-            // JSON_HEX_TAG|JSON_HEX_AMP hex-encode < > & so a field value containing
-            // "</script>" can't break out of the script block (stored XSS). Slashes stay
-            // unescaped for clean URLs.
-            echo wp_json_encode($item, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
-            echo "</script>\n";
-        }
+    if (!empty($content_studio)) {
+        echo "\n<!-- Serpulix Content Studio Schema -->\n";
+        serpulix_seo_print_schema_items($content_studio);
+        echo "<!-- /Serpulix Content Studio Schema -->\n";
     }
-    echo "<!-- /Serpulix SEO Schema -->\n";
+    if (!empty($analyzer)) {
+        echo "\n<!-- Serpulix SEO Schema.org Markup -->\n";
+        serpulix_seo_print_schema_items($analyzer);
+        echo "<!-- /Serpulix SEO Schema -->\n";
+    }
 }

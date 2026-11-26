@@ -4,7 +4,7 @@ Tags: seo, schema, structured data, json-ld, content
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 4.10.0
+Stable tag: 4.11.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -62,6 +62,30 @@ Release appears on Plugins and Dashboard → Updates like any other plugin updat
 3. Manage content and schema from the Serpulix dashboard.
 
 == Changelog ==
+
+= 4.11.1 =
+* Image Alt Text: "Mark decorative" on an image that has no alt attribute now writes alt="" on the tag
+  (and an empty alt in the media library). Before, a missing alt and alt="" were read as the same, so the
+  write answered "unchanged" and the page stayed as it was. Pages left alone because a person changed
+  them are still left alone.
+
+= 4.11.0 =
+* Content is saved exactly as sent. Technical SEO content fixes, Image Alt Text writes and Content
+  Studio publishing no longer lose backslashes (block settings, FAQ blocks, inline code), and Technical
+  SEO content fixes no longer strip embeds (maps, videos, forms). If WordPress would store a content fix
+  differently, the page is put back and Serpulix is told.
+* Technical SEO: 404 pages can be redirected (the plugin's own redirect list; loops and redirects over a
+  published page are refused).
+* Image Alt Text, write protocol 2: each write says what alt Serpulix last saw on every page and the
+  plugin leaves alone any page where a person changed it since. Images are matched by their media id
+  (a different photo with the same file name is never touched), CDN copies are recognised, "$" and
+  backslashes in alt text are written as typed, drafts and private posts are skipped, an alt-only save
+  does not change the post's modified date, writes are journalled so a retry after a timeout never
+  writes twice, the page cache is purged, and Undo restores every page and the media library alt.
+* Image Alt Text: the page-content answer also lists WooCommerce gallery images, ACF image fields and
+  Elementor layouts.
+* Schema: Content Studio's schema prints under its own comment, and the Analyzer's FAQPage is left out
+  when Content Studio already prints one (no duplicate FAQ).
 
 = 4.10.0 =
 * Technical SEO: pages served at their own address by another post type (Serpulix landing pages at
